@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>科目一答题系统</title>
+  <!-- 引入Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet" />
+  <!-- 引入题目数据文件 -->
+  <script src="questions.js"></script>
+
+  <!-- 配置Tailwind -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#3B82F6", // 主色调：蓝色
+            secondary: "#10B981", // 辅助色：绿色
+            accent: "#F59E0B", // 强调色：橙色
+            neutral: "#1F2937", // 中性色：深灰
+          },
+          fontFamily: {
+            sans: ["Inter", "system-ui", "sans-serif"],
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- 自定义工具类 -->
+  <style type="text/tailwindcss">
+    @layer utilities {
+       .no-select {
+    user-select: none;
+    -webkit-user-select: none; /* Safari 兼容 */
+    -moz-user-select: none; /* Firefox 兼容 */
+    -ms-user-select: none; /* IE/Edge 兼容 */
+  }
+        .content-auto {
+          content-visibility: auto;
+        }
+        .transition-custom {
+          transition: all 0.3s ease;
+        }
+        .card-hover {
+          @apply hover:shadow-lg hover:-translate-y-1 transition-custom;
+        }
+        .answer-correct {
+          @apply bg-blue-500 bg-opacity-20 border-blue-500;
+        }
+        .answer-selected {
+          @apply bg-primary bg-opacity-10 border-primary;
+        }
+        .answer-incorrect {
+          @apply bg-red-500 bg-opacity-20 border-red-500;
+        }
+        .touch-manipulation {
+          touch-action: manipulation;
+        }
+      }
+    </style>
+</head>
+
+<body class="bg-gray-50 font-sans text-neutral min-h-screen">
+  <div id="app" class="container mx-auto px-4 py-8 max-w-4xl">
+    <!-- 头部 -->
+    <header class="mb-10 text-center">
+      <h1 class="text-[clamp(1.8rem,5vw,2.5rem)] font-bold text-neutral mb-2">
+        科目一答题系统
+      </h1>
+      <p class="text-gray-600">完成题目后，正确答案将以蓝色背景标注</p>
+    </header>
+
+    <!-- 进度条 -->
+    <div class="mb-8">
+      <div class="flex justify-between text-sm mb-2">
+        <span>进度</span>
+        <span>{{ currentQuestionIndex + 1 }}/{{ totalQuestions }}</span>
+      </div>
+      <div class="w-full bg-gray-200 rounded-full h-2.5">
+        <div class="bg-primary h-2.5 rounded-full transition-custom" :style="{ width: progressPercentage + '%' }"></div>
+      </div>
+    </div>
+
+    <!-- 答题卡片 -->
+    <div class="bg-white rounded-xl shadow-md p-6 mb-8 card-hover">
+      <!-- 题目类型指示 -->
+      <div class="inline-block px-3 py-1 bg-primary bg-opacity-10 text-primary rounded-full text-sm font-medium mb-4">
+        {{ currentQuestion.type === 'single' ? '单选题' : currentQuestion.type === 'multiple' ? '多选题' : '判断题' }}
+      </div>
+
+      <!-- 题目内容 -->
+      <h2 class="text-xl font-semibold mb-6">
+        {{ currentQuestionIndex + 1 }}. {{ currentQuestion.question }}
+      </h2>
+
+      <!-- 选项列表 -->
+      <div class="space-y-3 mb-6" v-if="currentQuestion.options">
+        <div v-for="(option, key) in currentQuestion.options" :key="key"
+          class="border rounded-lg p-4 cursor-pointer transition-custom hover:bg-gray-50" :class="{
+                        'answer-selected': isSelected(key),
+                        'answer-correct': showAnswers && currentQuestion.correctAnswer.includes(key),
+                        'answer-incorrect': showAnswers && isSelected(key) && !currentQuestion.correctAnswer.includes(key)
+                    }" @click="selectOption(key)">
+          <div class="flex items-center">
+            <span class="font-medium w-6">{{ key }}.</span>
+            <span class="ml-2">{{ option }}</span>
+
+            <!-- 正确答案标记 -->
+            <i class="fa fa-check text-green-500 ml-auto"
+              v-if="showAnswers && currentQuestion.correctAnswer.includes(key)"></i>
+
+            <!-- 错误答案标记 -->
+            <i class="fa fa-times text-red-500 ml-auto"
+              v-if="showAnswers && isSelected(key) && !currentQuestion.correctAnswer.includes(key)"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- 判断题特殊处理 -->
+      <div class="space-y-3 mb-6" v-if="currentQuestion.type === 'judge'">
+        <div class="border rounded-lg p-4 cursor-pointer transition-custom hover:bg-gray-50" :class="{
+                        'answer-selected': selectedOptions.includes('A'),
+                        'answer-correct': showAnswers && currentQuestion.correctAnswer.includes('A'),
+                        'answer-incorrect': showAnswers && selectedOptions.includes('A') && !currentQuestion.correctAnswer.includes('A')
+                    }" @click="selectOption('A')">
+          <div class="flex items-center">
+            <span class="font-medium w-6">A.</span>
+            <span class="ml-2">正确</span>
+
+            <i class="fa fa-check text-green-500 ml-auto"
+              v-if="showAnswers && currentQuestion.correctAnswer.includes('A')"></i>
+            <i class="fa fa-times text-red-500 ml-auto"
+              v-if="showAnswers && selectedOptions.includes('A') && !currentQuestion.correctAnswer.includes('A')"></i>
+          </div>
+        </div>
+
+        <div class="border rounded-lg p-4 cursor-pointer transition-custom hover:bg-gray-50" :class="{
+                        'answer-selected': selectedOptions.includes('B'),
+                        'answer-correct': showAnswers && currentQuestion.correctAnswer.includes('B'),
+                        'answer-incorrect': showAnswers && selectedOptions.includes('B') && !currentQuestion.correctAnswer.includes('B')
+                    }" @click="selectOption('B')">
+          <div class="flex items-center">
+            <span class="font-medium w-6">B.</span>
+            <span class="ml-2">错误</span>
+
+            <i class="fa fa-check text-green-500 ml-auto"
+              v-if="showAnswers && currentQuestion.correctAnswer.includes('B')"></i>
+            <i class="fa fa-times text-red-500 ml-auto"
+              v-if="showAnswers && selectedOptions.includes('B') && !currentQuestion.correctAnswer.includes('B')"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 按钮区域（可拖拽） -->
+    <div id="action-buttons-block"
+      class="flex flex-wrap justify-center gap-2 fixed z-50 bg-white/95 backdrop-blur-sm p-2 rounded-xl shadow-lg transition-custom no-select"
+      :style="[buttonBlockStyle, { cursor: isDragging ? 'grabbing' : 'grab' }]">
+      <!-- 拖拽触发区（空白背景，不影响按钮点击） -->
+      <div class="absolute inset-0 z-0" @mousedown="startDrag" @touchstart="startDrag"></div>
+
+      <button
+        class="relative z-10 touch-manipulation px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-custom flex items-center text-sm pointer-events-auto"
+        @click="prevQuestion" :disabled="prevQuestionButtonDisable"
+        :class="{ 'opacity-50 cursor-not-allowed': prevQuestionButtonDisable }">
+        <i class="fa fa-arrow-left mr-1"></i> 上一题
+      </button>
+
+      <button
+        class="relative z-10 touch-manipulation px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-custom flex items-center text-sm pointer-events-auto"
+        @click="showAnswers=!showAnswers">
+        {{ showAnswers ? "隐藏答案" : "显示答案" }}
+      </button>
+
+      <button v-if="!showResults"
+        class="relative z-10 touch-manipulation px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-custom text-sm pointer-events-auto"
+        @click="submitQuiz" :disabled="showResults">
+        提交试卷
+      </button>
+
+      <button
+        class="relative z-10 touch-manipulation px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-custom flex items-center text-sm pointer-events-auto"
+        @click="nextQuestion" :disabled="nextQuestionButtonDisable"
+        :class="{ 'opacity-50 cursor-not-allowed': nextQuestionButtonDisable }">
+        下一题 <i class="fa fa-arrow-right ml-1"></i>
+      </button>
+
+      <button v-if="showResults"
+        class="relative z-10 touch-manipulation px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-custom text-sm pointer-events-auto"
+        @click="restartQuiz">
+        <i class="fa fa-refresh mr-1"></i> 重新开始
+      </button>
+    </div>
+
+    <!-- 结果统计 -->
+    <div class="mt-10 bg-white rounded-xl shadow-md p-6 text-center" v-if="showResults">
+      <h2 class="text-2xl font-bold mb-4">答题完成！</h2>
+      <div class="flex justify-center items-center mb-6">
+        <div class="w-32 h-32 rounded-full bg-primary bg-opacity-10 flex items-center justify-center">
+          <span class="text-4xl font-bold text-primary">{{ score }}</span>
+          <span class="text-xl text-gray-500 ml-1">/{{ totalScore }}</span>
+        </div>
+      </div>
+      <p class="text-gray-600 mb-2">
+        正确率：{{ (score / totalScore * 100).toFixed(1) }}%
+      </p>
+      <p class="text-gray-500 text-sm">
+        共{{ totalQuestions }}题，其中单选题{{ singleCount }}题，多选题{{ multipleCount }}题，判断题{{ judgeCount }}题
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // 创建Vue应用
+    const { createApp } = Vue;
+
+    createApp({
+      data() {
+        return {
+          // 题目数据
+          // 例子：
+          // questionData =[
+          //   // 单选题
+          //   {
+          //     type: "single",
+          //     question: "抑郁状态和较轻度的意志缺乏都可以出现意志减退．它们的区别是（ ）不同。",
+          //     options: {
+          //       A: "主动性缺失程度",
+          //       B: "行为减少程度",
+          //       C: "内心的情感感受",
+          //       D: "被动性的表现",
+          //     },
+          //     correctAnswer: ["C"],
+          //     points: 1,
+          //   },
+          //   // 多选题
+          //   {
+          //     type: "multiple",
+          //     question: "意志的品质有（ ）。",
+          //     options: {
+          //       A: "自觉性",
+          //       B: "目的性",
+          //       C: "坚韧性",
+          //       D: "自制性",
+          //     },
+          //     correctAnswer: ["A", "C", "D"],
+          //     points: 2,
+          //   },
+          //   // 判断题
+          //   {
+          //     type: "judge",
+          //     question: "心理咨询师使用虚假信息、夸大疗效、隐瞒自己专业局限等行为主要违背了诚信原则。",
+          //     correctAnswer: ["A"], // A=正确，B=错误
+          //     points: 1,
+          //   }
+          // ],
+          questions: questionData, // 从questions.js导入题目数据
+
+          currentQuestionIndex: 0,
+          selectedOptions: [],
+          userAnswers: {}, // 存储用户所有答案 {index: [选项]}
+          showAnswers: false, // 是否显示答案解析
+          showResults: false, // 是否显示最终结果
+          score: 0, // 得分
+
+          // 拖拽相关数据
+          isDragging: false,
+          dragOffsetX: 0,
+          dragOffsetY: 0,
+          startX: 0,
+          startY: 0,
+          currentX: 0,
+          currentY: 0,
+          buttonPosition: { // 存储按钮区域位置
+            left: '50%',
+            top: '90%',
+            transform: 'translate(-50%, -50%)'
+          },
+          initialButtonPosition: { // 初始位置备份
+            left: '50%',
+            top: '90%',
+            transform: 'translate(-50%, -50%)'
+          }
+        };
+      },
+      computed: {
+        // 上一题按钮是否不可用
+        prevQuestionButtonDisable() {
+          return this.currentQuestionIndex === 0;
+        },
+
+        // 下一题按钮是否不可用
+        nextQuestionButtonDisable() {
+          return this.currentQuestionIndex + 1 === this.questions.length;
+        },
+
+        // 当前题目
+        currentQuestion() {
+          return this.questions[this.currentQuestionIndex];
+        },
+
+        // 总题目数
+        totalQuestions() {
+          return this.questions.length;
+        },
+
+        // 进度百分比
+        progressPercentage() {
+          return ((this.currentQuestionIndex + 1) / this.totalQuestions) * 100;
+        },
+
+        // 总分
+        totalScore() {
+          return this.questions.reduce((sum, question) => sum + question.points, 0);
+        },
+
+        // 各类题型数量
+        singleCount() {
+          return this.questions.filter((q) => q.type === "single").length;
+        },
+        multipleCount() {
+          return this.questions.filter((q) => q.type === "multiple").length;
+        },
+        judgeCount() {
+          return this.questions.filter((q) => q.type === "judge").length;
+        },
+
+        // 按钮区域样式
+        buttonBlockStyle() {
+          return {
+            left: this.buttonPosition.left,
+            top: this.buttonPosition.top,
+            transform: this.buttonPosition.transform
+          };
+        }
+      },
+      created() {
+        // 初始化时随机打乱题目顺序
+        this.questions = this.shuffleQuestions(this.questions);
+        // 打乱每个题目的选项顺序
+        this.questions = this.questions.map(question => this.shuffleOptions(question));
+        // 初始化初始位置
+        this.initialButtonPosition = { ...this.buttonPosition };
+      },
+      methods: {
+        // 提交试卷
+        submitQuiz() {
+          // 保存当前题目的答案
+          if (this.selectedOptions.length > 0) {
+            this.userAnswers[this.currentQuestionIndex] = [...this.selectedOptions];
+          }
+
+          // 检查是否有未答题目
+          const unAnswered = [];
+          this.questions.forEach((_, index) => {
+            if (!this.userAnswers[index] || this.userAnswers[index].length === 0) {
+              unAnswered.push(index + 1); // 记录未答题号（从1开始）
+            }
+          });
+
+          // 有未答题时提示
+          if (unAnswered.length > 0) {
+            if (!confirm(`您有${unAnswered.length}道题目未答：${unAnswered.join(', ')}\n确定要提交试卷吗？`)) {
+              return;
+            }
+          }
+
+          // 计算得分并显示结果
+          this.calculateScore();
+          this.showResults = true;
+          this.showAnswers = true;
+        },
+
+        // 打乱题目顺序
+        shuffleQuestions(originalQuestions) {
+          const questions = JSON.parse(JSON.stringify(originalQuestions));
+          for (let i = questions.length - 1; i > 0; i--) {
+            const randomIndex = Math.floor(Math.random() * (i + 1));
+            [questions[i], questions[randomIndex]] = [questions[randomIndex], questions[i]];
+          }
+          return questions;
+        },
+
+        // 打乱选项顺序
+        shuffleOptions(question) {
+          if (question.type !== 'judge' && question.options) {
+            const questionCopy = JSON.parse(JSON.stringify(question));
+            const options = questionCopy.options;
+            const correctAnswer = questionCopy.correctAnswer;
+
+            const optionEntries = Object.entries(options);
+            for (let i = optionEntries.length - 1; i > 0; i--) {
+              const randomIndex = Math.floor(Math.random() * (i + 1));
+              [optionEntries[i], optionEntries[randomIndex]] = [optionEntries[randomIndex], optionEntries[i]];
+            }
+
+            const newOptions = {};
+            const keyMap = {};
+            optionEntries.forEach(([oldKey, value], index) => {
+              const newKey = String.fromCharCode(65 + index);
+              newOptions[newKey] = value;
+              keyMap[oldKey] = newKey;
+            });
+
+            questionCopy.options = newOptions;
+            questionCopy.correctAnswer = correctAnswer.map(oldKey => keyMap[oldKey]);
+            return questionCopy;
+          }
+          return question;
+        },
+
+        // 选择选项
+        selectOption(key) {
+          if (this.showAnswers) return;
+
+          if (this.currentQuestion.type === "single" || this.currentQuestion.type === "judge") {
+            this.selectedOptions = [key];
+          } else {
+            if (this.selectedOptions.includes(key)) {
+              this.selectedOptions = this.selectedOptions.filter(item => item !== key);
+            } else {
+              this.selectedOptions.push(key);
+              this.selectedOptions.sort();
+            }
+          }
+        },
+
+        // 判断选项是否被选中
+        isSelected(key) {
+          return this.selectedOptions.includes(key);
+        },
+
+        // 下一题
+        nextQuestion() {
+          this.userAnswers[this.currentQuestionIndex] = [...this.selectedOptions];
+
+          if (this.currentQuestionIndex === this.totalQuestions - 1) {
+            this.calculateScore();
+            this.showResults = true;
+            this.showAnswers = true;
+          } else {
+            this.currentQuestionIndex++;
+            this.selectedOptions = this.userAnswers[this.currentQuestionIndex] || [];
+          }
+        },
+
+        // 上一题
+        prevQuestion() {
+          if (this.currentQuestionIndex > 0) {
+            this.userAnswers[this.currentQuestionIndex] = [...this.selectedOptions];
+            this.currentQuestionIndex--;
+            this.selectedOptions = this.userAnswers[this.currentQuestionIndex] || [];
+          }
+        },
+
+        // 计算得分
+        calculateScore() {
+          this.score = 0;
+          this.questions.forEach((question, index) => {
+            const userAnswer = this.userAnswers[index] || [];
+            const isCorrect = JSON.stringify(userAnswer.sort()) === JSON.stringify(question.correctAnswer.sort());
+            if (isCorrect) {
+              this.score += question.points;
+            }
+          });
+        },
+
+        // 重新开始
+        restartQuiz() {
+          this.currentQuestionIndex = 0;
+          this.selectedOptions = [];
+          this.userAnswers = {};
+          this.showAnswers = false;
+          this.showResults = false;
+          this.score = 0;
+          // 重新打乱题目
+          this.questions = this.shuffleQuestions(this.questions);
+          this.questions = this.questions.map(question => this.shuffleOptions(question));
+          // 重置按钮位置
+          this.buttonPosition = {
+            left: '50%',
+            top: '90%',
+            transform: 'translate(-50%, -50%)'
+          };
+        },
+
+        // 开始拖拽
+        startDrag(e) {
+          e.preventDefault();
+          this.isDragging = true;
+
+          // 获取按钮区块元素
+          const block = document.getElementById("action-buttons-block");
+          const rect = block.getBoundingClientRect();
+
+          // 记录初始触摸位置（用于判断是否为点击）
+          if (e.type === 'mousedown') {
+            this.startX = e.clientX;
+            this.startY = e.clientY;
+            this.dragOffsetX = e.clientX - rect.left;
+            this.dragOffsetY = e.clientY - rect.top;
+
+            document.addEventListener('mousemove', this.handleMouseMove);
+            document.addEventListener('mouseup', this.handleMouseUp);
+            document.addEventListener('mouseleave', this.handleMouseUp);
+          } else if (e.type === 'touchstart') {
+            this.startX = e.touches[0].clientX;
+            this.startY = e.touches[0].clientY;
+            this.dragOffsetX = e.touches[0].clientX - rect.left;
+            this.dragOffsetY = e.touches[0].clientY - rect.top;
+
+            document.addEventListener('touchmove', this.handleTouchMove);
+            document.addEventListener('touchend', this.handleTouchEnd);
+            document.addEventListener('touchcancel', this.handleTouchEnd);
+          }
+        },
+
+        // 处理鼠标移动
+        handleMouseMove(e) {
+          if (!this.isDragging) return;
+
+          const block = document.getElementById("action-buttons-block");
+          const clientX = e.clientX;
+          const clientY = e.clientY;
+
+          // 计算移动距离
+          const moveX = clientX - this.startX;
+          const moveY = clientY - this.startY;
+          // 只有移动距离超过5px才视为拖拽
+          if (Math.abs(moveX) < 5 && Math.abs(moveY) < 5) return;
+
+          // 计算新位置
+          const newLeft = clientX - this.dragOffsetX;
+          const newTop = clientY - this.dragOffsetY;
+
+          // 限制在可视区域内
+          const maxLeft = window.innerWidth - block.offsetWidth;
+          const finalLeft = Math.max(0, Math.min(newLeft, maxLeft));
+          const maxTop = window.innerHeight - block.offsetHeight;
+          const finalTop = Math.max(0, Math.min(newTop, maxTop));
+
+          // 更新位置数据
+          this.buttonPosition = {
+            left: `${finalLeft}px`,
+            top: `${finalTop}px`,
+            transform: 'none'
+          };
+        },
+
+        // 处理鼠标释放
+        handleMouseUp() {
+          this.isDragging = false;
+          document.removeEventListener('mousemove', this.handleMouseMove);
+          document.removeEventListener('mouseup', this.handleMouseUp);
+          document.removeEventListener('mouseleave', this.handleMouseUp);
+        },
+
+        // 处理触摸移动
+        handleTouchMove(e) {
+          if (!this.isDragging) return;
+
+          const block = document.getElementById("action-buttons-block");
+          const clientX = e.touches[0].clientX;
+          const clientY = e.touches[0].clientY;
+
+          // 计算移动距离
+          const moveX = clientX - this.startX;
+          const moveY = clientY - this.startY;
+          // 只有移动距离超过5px才视为拖拽
+          if (Math.abs(moveX) < 5 && Math.abs(moveY) < 5) return;
+
+          e.preventDefault();
+
+          // 计算新位置
+          const newLeft = clientX - this.dragOffsetX;
+          const newTop = clientY - this.dragOffsetY;
+
+          // 限制在可视区域内
+          const maxLeft = window.innerWidth - block.offsetWidth;
+          const finalLeft = Math.max(0, Math.min(newLeft, maxLeft));
+          const maxTop = window.innerHeight - block.offsetHeight;
+          const finalTop = Math.max(0, Math.min(newTop, maxTop));
+
+          // 更新位置数据
+          this.buttonPosition = {
+            left: `${finalLeft}px`,
+            top: `${finalTop}px`,
+            transform: 'none'
+          };
+        },
+
+        // 处理触摸结束
+        handleTouchEnd() {
+          this.isDragging = false;
+          document.removeEventListener('touchmove', this.handleTouchMove);
+          document.removeEventListener('touchend', this.handleTouchEnd);
+          document.removeEventListener('touchcancel', this.handleTouchEnd);
+        }
+      },
+      // 组件销毁时清理事件监听
+      beforeUnmount() {
+        document.removeEventListener('mousemove', this.handleMouseMove);
+        document.removeEventListener('mouseup', this.handleMouseUp);
+        document.removeEventListener('mouseleave', this.handleMouseUp);
+        document.removeEventListener('touchmove', this.handleTouchMove);
+        document.removeEventListener('touchend', this.handleTouchEnd);
+        document.removeEventListener('touchcancel', this.handleTouchEnd);
+      }
+    }).mount("#app");
+  </script>
+</body>
+
+</html>
